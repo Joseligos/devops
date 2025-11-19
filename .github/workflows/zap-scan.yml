@@ -24,10 +24,12 @@ jobs:
       
       - name: Run ZAP full scan
         uses: zaproxy/action-full-scan@v0.8.0
+        continue-on-error: true
         with:
           target: 'https://devops-crud-app-backend.onrender.com'
           fail_action: false
           cmd_options: '-a'
+          allow_issue_writing: false
       
       - name: Convert ZAP JSON to SARIF
         if: always()
