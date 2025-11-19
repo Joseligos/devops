@@ -87,7 +87,7 @@ Monthly Build Time Savings:
 
 Annual Cost Savings (at scale):
   Reduced overages: $1,500+
-  Development time: Unmeasurable ⏰
+  Development time: Unmeasurable 
 
 ════════════════════════════════════════════════════════════════════════════════
 
