@@ -3,9 +3,6 @@ on:
   push:
     branches: [ main ]
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.sha }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,10 +24,10 @@ jobs:
       - name: Build and push image
         id: build-image
         run: |
+          IMAGE="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')/app:${{ github.sha }}"
           docker build -t $IMAGE .
           docker push $IMAGE
-        env:
-          IMAGE: ${{ env.IMAGE }}
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
   deploy-green:
     needs: build
@@ -55,7 +52,7 @@ jobs:
         run: |
           # Asumimos un Deployment con label app=my-app y variable de selector 'version'
           kubectl apply -n green -f k8s/deployment-green.yaml
-          kubectl set image deploy/my-app -n green my-app=${{ env.IMAGE }}
+          kubectl set image deploy/my-app -n green my-app=${{ needs.build.outputs.image }}
           kubectl rollout status deploy/my-app -n green --timeout=3m
 
       - name: Run smoke tests against green

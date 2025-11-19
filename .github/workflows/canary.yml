@@ -4,12 +4,13 @@ on:
     branches: [ main ]
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.sha }}
   ISTIO_NAMESPACE: production
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,9 +25,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
+        id: build-image
         run: |
+          IMAGE="ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')/app:${{ github.sha }}"
           docker build -t $IMAGE .
           docker push $IMAGE
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
   deploy-canary:
     needs: build
@@ -49,7 +53,7 @@ jobs:
         run: |
           # Se asume que existe un Deployment para v1 y uno para v2 con label subset: v1/v2
           kubectl apply -f k8s/deployment-canary.yaml -n ${{ env.ISTIO_NAMESPACE }}
-          kubectl set image deploy/my-app-canary -n ${{ env.ISTIO_NAMESPACE }} my-app=${{ env.IMAGE }}
+          kubectl set image deploy/my-app-canary -n ${{ env.ISTIO_NAMESPACE }} my-app=${{ needs.build.outputs.image }}
           kubectl rollout status deploy/my-app-canary -n ${{ env.ISTIO_NAMESPACE }} --timeout=3m
 
       - name: Shift traffic to canary 5% (Istio VirtualService)
