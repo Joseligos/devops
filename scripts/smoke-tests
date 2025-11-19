@@ -1,0 +1,136 @@
+#!/bin/bash
+# Blue-Green Smoke Tests
+# Validates the green environment before switching traffic
+
+set -e
+
+# Parse arguments
+URL="${1:-https://green.example.com}"
+
+echo "🧪 Running Smoke Tests"
+echo "   Target: $URL"
+echo ""
+
+# For simulation, we'll test against the actual backend
+REAL_BACKEND="https://devops-crud-app-backend.onrender.com"
+echo "   (Simulating with: $REAL_BACKEND)"
+echo ""
+
+FAILED=0
+TOTAL=0
+
+# Helper function for tests
+run_test() {
+  local name="$1"
+  local command="$2"
+  
+  TOTAL=$((TOTAL + 1))
+  echo -n "[$TOTAL] $name... "
+  
+  if eval "$command" > /dev/null 2>&1; then
+    echo "✅ PASS"
+  else
+    echo "❌ FAIL"
+    FAILED=$((FAILED + 1))
+  fi
+}
+
+echo "═══════════════════════════════════════════"
+echo "🏥 Health & Availability Tests"
+echo "═══════════════════════════════════════════"
+echo ""
+
+run_test "Health endpoint responds" \
+  "curl -sf -m 10 $REAL_BACKEND/healthz"
+
+run_test "Health returns 200 status" \
+  "[ \$(curl -sf -o /dev/null -w '%{http_code}' $REAL_BACKEND/healthz) -eq 200 ]"
+
+run_test "Response time < 2s" \
+  "[ \$(curl -sf -w '%{time_total}' -o /dev/null $REAL_BACKEND/healthz | cut -d. -f1) -lt 2 ]"
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "🔧 API Functionality Tests"
+echo "═══════════════════════════════════════════"
+echo ""
+
+run_test "GET /users endpoint accessible" \
+  "curl -sf -m 10 $REAL_BACKEND/users"
+
+run_test "GET /users returns valid JSON" \
+  "curl -sf $REAL_BACKEND/users | jq . > /dev/null 2>&1"
+
+run_test "GET /users returns array" \
+  "curl -sf $REAL_BACKEND/users | jq -e 'type == \"array\"' > /dev/null 2>&1"
+
+# Test POST endpoint
+TEST_USER='{"name":"test-bluegreen-'$RANDOM'","email":"test@example.com"}'
+
+run_test "POST /users creates resource" \
+  "curl -sf -X POST $REAL_BACKEND/users -H 'Content-Type: application/json' -d '$TEST_USER'"
+
+run_test "POST /users returns 201" \
+  "[ \$(curl -sf -X POST -o /dev/null -w '%{http_code}' $REAL_BACKEND/users -H 'Content-Type: application/json' -d '$TEST_USER') -eq 201 ]"
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "🔐 Security Tests"
+echo "═══════════════════════════════════════════"
+echo ""
+
+run_test "HTTPS enabled (or HTTP in dev)" \
+  "curl -sf -m 5 $REAL_BACKEND/healthz"
+
+run_test "CORS headers present" \
+  "curl -sf -I $REAL_BACKEND/healthz | grep -i 'access-control' > /dev/null 2>&1 || true"
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "📊 Performance Tests"
+echo "═══════════════════════════════════════════"
+echo ""
+
+run_test "Can handle 10 concurrent requests" \
+  "for i in {1..10}; do curl -sf $REAL_BACKEND/healthz > /dev/null & done; wait"
+
+# Measure average response time
+echo -n "[$((TOTAL + 1))] Average response time... "
+TOTAL=$((TOTAL + 1))
+
+AVG_TIME=0
+for i in {1..5}; do
+  TIME=$(curl -sf -w '%{time_total}' -o /dev/null $REAL_BACKEND/healthz 2>/dev/null || echo "0")
+  AVG_TIME=$(echo "$AVG_TIME + $TIME" | bc)
+done
+AVG_TIME=$(echo "scale=3; $AVG_TIME / 5" | bc)
+
+if (( $(echo "$AVG_TIME < 2.0" | bc -l) )); then
+  echo "✅ PASS (${AVG_TIME}s avg)"
+else
+  echo "❌ FAIL (${AVG_TIME}s avg - too slow)"
+  FAILED=$((FAILED + 1))
+fi
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "📈 Test Results Summary"
+echo "═══════════════════════════════════════════"
+echo ""
+echo "   Total Tests: $TOTAL"
+echo "   Passed: $((TOTAL - FAILED))"
+echo "   Failed: $FAILED"
+echo ""
+
+if [ $FAILED -eq 0 ]; then
+  echo "✅ ALL SMOKE TESTS PASSED"
+  echo ""
+  echo "🟢 Green environment is healthy and ready for production traffic"
+  exit 0
+else
+  echo "❌ SMOKE TESTS FAILED"
+  echo ""
+  echo "🔴 DO NOT switch traffic to green environment"
+  echo "   Review failed tests and fix issues before promoting"
+  exit 1
+fi

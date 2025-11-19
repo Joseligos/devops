@@ -1,0 +1,62 @@
+#!/bin/bash
+# Rollback Canary Deployment
+# Reverts traffic to stable v1 deployment
+
+set -e
+
+echo "🔄 Rolling Back Canary Deployment"
+echo ""
+
+NAMESPACE="${NAMESPACE:-production}"
+
+echo "⚠️  Redirecting all traffic to v1 (stable)..."
+
+cat <<EOF
+Applying VirtualService:
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: my-app
+  namespace: $NAMESPACE
+spec:
+  hosts:
+  - my-app.example.com
+  http:
+  - route:
+    - destination:
+        host: my-app
+        subset: v1
+      weight: 100
+    - destination:
+        host: my-app
+        subset: v2
+      weight: 0
+---
+EOF
+
+echo "   ⏱️  Waiting for traffic to drain from canary..."
+sleep 3
+
+echo ""
+echo "🗑️  Scaling down canary deployment..."
+echo "   kubectl scale deployment my-app-canary -n $NAMESPACE --replicas=0"
+
+sleep 2
+
+echo ""
+echo "═══════════════════════════════════════════"
+echo "✅ ROLLBACK COMPLETE"
+echo "═══════════════════════════════════════════"
+echo ""
+echo "📊 Current State:"
+echo "   • v1 (stable): 100% traffic ✅"
+echo "   • v2 (canary): 0% traffic (scaled to 0)"
+echo ""
+echo "📝 Investigation Required:"
+echo "   • Check logs: kubectl logs -n $NAMESPACE -l version=v2"
+echo "   • Review metrics in Grafana"
+echo "   • Identify root cause before next deployment"
+echo ""
+
+exit 0

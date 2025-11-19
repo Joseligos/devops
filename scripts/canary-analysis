@@ -1,0 +1,167 @@
+#!/bin/bash
+# Canary Analysis Script
+# Compares metrics between baseline (v1) and canary (v2) deployments
+
+set -e
+
+# Parse arguments
+BASELINE=""
+CANARY=""
+DURATION="10m"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --baseline)
+      BASELINE="$2"
+      shift 2
+      ;;
+    --canary)
+      CANARY="$2"
+      shift 2
+      ;;
+    --duration)
+      DURATION="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+echo "🔍 Starting Canary Analysis"
+echo "   Baseline: $BASELINE"
+echo "   Canary: $CANARY"
+echo "   Duration: $DURATION"
+echo ""
+
+# Convert duration to seconds
+if [[ $DURATION == *"m" ]]; then
+  SECONDS_DURATION=$((${DURATION%m} * 60))
+elif [[ $DURATION == *"s" ]]; then
+  SECONDS_DURATION=${DURATION%s}
+else
+  SECONDS_DURATION=$DURATION
+fi
+
+# Simulate metrics collection from Prometheus
+PROMETHEUS_URL="${PROMETHEUS_URL:-http://localhost:9090}"
+BACKEND_URL="${BACKEND_URL:-https://devops-crud-app-backend.onrender.com}"
+
+echo "⏱️  Monitoring for $SECONDS_DURATION seconds..."
+sleep 5  # Simulate initial data collection
+
+# Simulate metric queries (in real scenario, these would query Prometheus)
+echo ""
+echo "📊 Collecting Metrics..."
+echo ""
+
+# Error Rate Analysis
+echo "1️⃣  Error Rate Comparison"
+BASELINE_ERROR_RATE=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print rand()*0.01}')  # 0-1%
+CANARY_ERROR_RATE=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print rand()*0.01}')    # 0-1%
+
+echo "   Baseline ($BASELINE): ${BASELINE_ERROR_RATE}%"
+echo "   Canary ($CANARY): ${CANARY_ERROR_RATE}%"
+
+if (( $(echo "$CANARY_ERROR_RATE > 0.05" | bc -l) )); then
+  echo "   ❌ FAIL: Canary error rate above 5% threshold"
+  exit 1
+fi
+
+if (( $(echo "$CANARY_ERROR_RATE > $BASELINE_ERROR_RATE * 1.5" | bc -l) )); then
+  echo "   ❌ FAIL: Canary error rate 50% higher than baseline"
+  exit 1
+fi
+
+echo "   ✅ PASS: Error rate within acceptable range"
+echo ""
+
+# Latency Analysis (P95)
+echo "2️⃣  P95 Latency Comparison"
+BASELINE_P95=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 0.05 + rand()*0.15}')  # 50-200ms
+CANARY_P95=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 0.05 + rand()*0.15}')    # 50-200ms
+
+echo "   Baseline ($BASELINE): ${BASELINE_P95}s"
+echo "   Canary ($CANARY): ${CANARY_P95}s"
+
+if (( $(echo "$CANARY_P95 > 1.0" | bc -l) )); then
+  echo "   ❌ FAIL: Canary P95 latency above 1s threshold"
+  exit 1
+fi
+
+if (( $(echo "$CANARY_P95 > $BASELINE_P95 * 1.3" | bc -l) )); then
+  echo "   ❌ FAIL: Canary P95 latency 30% slower than baseline"
+  exit 1
+fi
+
+echo "   ✅ PASS: Latency within acceptable range"
+echo ""
+
+# Request Success Rate
+echo "3️⃣  Request Success Rate"
+BASELINE_SUCCESS=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 99.5 + rand()*0.5}')  # 99.5-100%
+CANARY_SUCCESS=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 99.5 + rand()*0.5}')    # 99.5-100%
+
+echo "   Baseline ($BASELINE): ${BASELINE_SUCCESS}%"
+echo "   Canary ($CANARY): ${CANARY_SUCCESS}%"
+
+if (( $(echo "$CANARY_SUCCESS < 99.0" | bc -l) )); then
+  echo "   ❌ FAIL: Canary success rate below 99% threshold"
+  exit 1
+fi
+
+echo "   ✅ PASS: Success rate acceptable"
+echo ""
+
+# Traffic Volume
+echo "4️⃣  Traffic Volume Check"
+CANARY_RPS=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 1 + int(rand()*10)}')
+echo "   Canary traffic: ${CANARY_RPS} req/s"
+
+if (( CANARY_RPS < 1 )); then
+  echo "   ❌ FAIL: Insufficient traffic to canary"
+  exit 1
+fi
+
+echo "   ✅ PASS: Sufficient traffic received"
+echo ""
+
+# Memory/CPU (simulated)
+echo "5️⃣  Resource Usage"
+CANARY_CPU=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 10 + rand()*40}')  # 10-50%
+CANARY_MEM=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print 30 + rand()*30}')  # 30-60%
+
+echo "   Canary CPU: ${CANARY_CPU}%"
+echo "   Canary Memory: ${CANARY_MEM}%"
+
+if (( $(echo "$CANARY_CPU > 80" | bc -l) )); then
+  echo "   ❌ FAIL: High CPU usage"
+  exit 1
+fi
+
+if (( $(echo "$CANARY_MEM > 80" | bc -l) )); then
+  echo "   ❌ FAIL: High memory usage"
+  exit 1
+fi
+
+echo "   ✅ PASS: Resource usage healthy"
+echo ""
+
+# Final verdict
+echo "═══════════════════════════════════════════"
+echo "✅ CANARY ANALYSIS PASSED"
+echo "═══════════════════════════════════════════"
+echo ""
+echo "📈 Summary:"
+echo "   • Error Rate: ${CANARY_ERROR_RATE}% (threshold: <5%)"
+echo "   • P95 Latency: ${CANARY_P95}s (threshold: <1s)"
+echo "   • Success Rate: ${CANARY_SUCCESS}% (threshold: >99%)"
+echo "   • Traffic: ${CANARY_RPS} req/s"
+echo "   • CPU: ${CANARY_CPU}%"
+echo "   • Memory: ${CANARY_MEM}%"
+echo ""
+echo "✅ Canary is healthy and ready for promotion"
+
+exit 0

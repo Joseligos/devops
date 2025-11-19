@@ -1,0 +1,79 @@
+#!/bin/bash
+# Promote Canary to Primary
+# Shifts traffic from v1 (stable) to v2 (canary) gradually
+
+set -e
+
+echo "🚀 Promoting Canary to Primary"
+echo ""
+
+NAMESPACE="${NAMESPACE:-production}"
+
+# Traffic shift stages
+STAGES=(10 25 50 75 100)
+
+for WEIGHT in "${STAGES[@]}"; do
+  V1_WEIGHT=$((100 - WEIGHT))
+  
+  echo "📊 Shifting traffic: v1=${V1_WEIGHT}% → v2=${WEIGHT}%"
+  
+  # In real scenario, this would apply Istio VirtualService
+  # For simulation, we just print and wait
+  cat <<EOF
+  Applying VirtualService:
+  ---
+  apiVersion: networking.istio.io/v1alpha3
+  kind: VirtualService
+  metadata:
+    name: my-app
+    namespace: $NAMESPACE
+  spec:
+    hosts:
+    - my-app.example.com
+    http:
+    - route:
+      - destination:
+          host: my-app
+          subset: v1
+        weight: $V1_WEIGHT
+      - destination:
+          host: my-app
+          subset: v2
+        weight: $WEIGHT
+  ---
+EOF
+  
+  echo "   ⏱️  Waiting 30s for traffic to stabilize..."
+  sleep 5  # Reduced for demo (would be 30s in production)
+  
+  # Quick health check
+  echo "   🏥 Health check..."
+  ERROR_RATE=$(awk -v seed=$RANDOM 'BEGIN{srand(seed); print rand()*0.01}')
+  echo "   Error rate: ${ERROR_RATE}% ✅"
+  
+  if (( $(echo "$ERROR_RATE > 0.05" | bc -l) )); then
+    echo ""
+    echo "❌ ROLLBACK: High error rate detected during promotion!"
+    echo "   Reverting traffic to v1 stable..."
+    ./scripts/rollback-canary
+    exit 1
+  fi
+  
+  echo ""
+done
+
+echo "═══════════════════════════════════════════"
+echo "✅ CANARY PROMOTED TO PRIMARY"
+echo "═══════════════════════════════════════════"
+echo ""
+echo "📊 Final State:"
+echo "   • v2 (canary): 100% traffic"
+echo "   • v1 (stable): 0% traffic"
+echo ""
+echo "📝 Next Steps:"
+echo "   1. Monitor v2 for 24 hours"
+echo "   2. Update 'stable' tag to point to v2"
+echo "   3. Scale down v1 deployment"
+echo ""
+
+exit 0
