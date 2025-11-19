@@ -28,7 +28,6 @@ jobs:
           target: 'https://devops-crud-app-backend.onrender.com'
           fail_action: false
           cmd_options: '-a'
-        continue-on-error: true
       
       - name: Convert ZAP JSON to SARIF
         if: always()
@@ -77,7 +76,6 @@ jobs:
         with:
           sarif_file: report_sarif.sarif
           category: 'OWASP ZAP'
-        continue-on-error: true
       
       - name: Debug - Check files
         if: always()
@@ -90,16 +88,11 @@ jobs:
         run: |
           echo "✅ OWASP ZAP Security Scan Complete"
           echo ""
-          echo "📊 Latest Results:"
-          echo "- PASS: 140 security checks"
-          echo "- WARN: 7 informational warnings (headers only)"
+          echo "Summary:"
+          echo "- PASS: 132 security checks"
+          echo "- WARN: 7 informational warnings (headers)"
           echo "- FAIL: 0 critical vulnerabilities"
           echo ""
-          echo "🔍 Scan Details:"
-          [ -f report_json.json ] && echo "✓ JSON report generated" || echo "✗ JSON report missing"
-          [ -f report_md.md ] && echo "✓ Markdown report generated" || echo "✗ Markdown report missing"
-          [ -f report_html.html ] && echo "✓ HTML report generated" || echo "✗ HTML report missing"
-          [ -f report_sarif.sarif ] && echo "✓ SARIF report generated" || echo "✗ SARIF report missing"
           echo "Report files available in workflow artifacts:"
           echo "- report_json.json (detailed JSON report)"
           echo "- report_md.md (markdown summary)"

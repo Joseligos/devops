@@ -1,0 +1,79 @@
+name: CI-CD Blue-Green
+on:
+  push:
+    branches: [ main ]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build-image
+        run: |
+          docker build -t $IMAGE .
+          docker push $IMAGE
+        env:
+          IMAGE: ${{ env.IMAGE }}
+
+  deploy-green:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for manifests and scripts)
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure Kubecontext
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+          mkdir -p $HOME/.kube
+          mv kubeconfig $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Deploy to green namespace
+        run: |
+          # Asumimos un Deployment con label app=my-app y variable de selector 'version'
+          kubectl apply -n green -f k8s/deployment-green.yaml
+          kubectl set image deploy/my-app -n green my-app=${{ env.IMAGE }}
+          kubectl rollout status deploy/my-app -n green --timeout=3m
+
+      - name: Run smoke tests against green
+        run: |
+          ./scripts/smoke-tests --url https://green.example.com
+
+  switch-traffic:
+    needs: deploy-green
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Switch service to green (patch selector example)
+        run: |
+          # Ejemplo: el Service usa selector {version: blue} o {version: green}
+          kubectl -n production patch service my-app -p '{"spec":{"selector":{"version":"green"}}}'
+          # Esperar unos segundos para estabilizar
+          sleep 10
+          kubectl get svc -n production my-app -o wide

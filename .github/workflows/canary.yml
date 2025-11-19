@@ -1,0 +1,90 @@
+name: CI-CD Canary
+on:
+  push:
+    branches: [ main ]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.sha }}
+  ISTIO_NAMESPACE: production
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+  deploy-canary:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (manifests & scripts)
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure Kubecontext
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+          mkdir -p $HOME/.kube
+          mv kubeconfig $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Deploy canary deployment (v2)
+        run: |
+          # Se asume que existe un Deployment para v1 y uno para v2 con label subset: v1/v2
+          kubectl apply -f k8s/deployment-canary.yaml -n ${{ env.ISTIO_NAMESPACE }}
+          kubectl set image deploy/my-app-canary -n ${{ env.ISTIO_NAMESPACE }} my-app=${{ env.IMAGE }}
+          kubectl rollout status deploy/my-app-canary -n ${{ env.ISTIO_NAMESPACE }} --timeout=3m
+
+      - name: Shift traffic to canary 5% (Istio VirtualService)
+        run: |
+          kubectl apply -n ${{ env.ISTIO_NAMESPACE }} -f - <<EOF
+          apiVersion: networking.istio.io/v1alpha3
+          kind: VirtualService
+          metadata:
+            name: my-app
+          spec:
+            hosts:
+            - my-app.example.com
+            http:
+            - route:
+              - destination:
+                  host: my-app
+                  subset: v1
+                weight: 95
+              - destination:
+                  host: my-app
+                  subset: v2
+                weight: 5
+          EOF
+
+      - name: Wait and run canary analysis
+        run: |
+          # Script que compara métricas del canary vs baseline; debe estar implementado en el repo
+          ./scripts/canary-analysis --baseline v1 --canary v2 --duration 10m
+
+      - name: Promote canary if analysis OK
+        if: ${{ success() }}
+        run: |
+          ./scripts/promote-canary-to-primary
+
+      - name: Rollback canary if analysis fails
+        if: ${{ failure() }}
+        run: |
+          ./scripts/rollback-canary
