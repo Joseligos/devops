@@ -127,29 +127,38 @@ jobs:
           elapsed=$((end_time - ${{ steps.start.outputs.start_time }}))
           echo "Build completed in ${elapsed}s"
 
-  # Phase 3: Deploy (only if all checks pass)
+  # Phase 3: Deploy (delegated to render-deploy.yml)
   deploy:
     name: 🚀 Deploy to Render
     needs: [test, lint, build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - name: 📍 Pipeline start
-        id: start
-        run: echo "pipeline_start=$(date +%s)" >> $GITHUB_ENV
-
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Verify deployment target
+      - name: Deployment info
         run: |
-          echo "Deployment Target: https://devops-crud-app-backend.onrender.com"
-          curl -f https://devops-crud-app-backend.onrender.com/healthz || echo "Service starting up..."
-
-      - name: Trigger Render deployment
-        run: |
-          echo "✅ Render auto-deployment triggered on push to main"
-          echo "Watch deployment at: https://dashboard.render.com"
+          echo "═══════════════════════════════════════════════════════"
+          echo "🚀 Deployment Workflow"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+          echo "✅ CI/CD checks passed successfully!"
+          echo ""
+          echo "📝 Deployment is handled by:"
+          echo "  → Workflow: render-deploy.yml"
+          echo "  → Triggers: Render deploy hooks"
+          echo "  → Tests: Comprehensive smoke tests"
+          echo ""
+          echo "🔍 Monitor deployment at:"
+          echo "  • GitHub Actions: https://github.com/${{ github.repository }}/actions"
+          echo "  • Render Dashboard: https://dashboard.render.com"
+          echo ""
+          echo "📊 The render-deploy workflow will:"
+          echo "  1. Pre-deployment health checks"
+          echo "  2. Trigger Render deployments (backend + frontend)"
+          echo "  3. Monitor deployment progress"
+          echo "  4. Execute 12 smoke tests"
+          echo "  5. Generate deployment report"
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
 
       - name: 📊 Pipeline summary
         run: |

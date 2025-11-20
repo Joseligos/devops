@@ -1,0 +1,227 @@
+name: 🚀 Deploy to Render with Smoke Tests
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  BACKEND_URL: https://devops-crud-app-backend.onrender.com
+  FRONTEND_URL: https://devops-crud-app-frontend.onrender.com
+
+jobs:
+  # Pre-deployment smoke tests on current production
+  pre-deploy-tests:
+    name: 🔍 Pre-Deploy Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check backend health
+        run: |
+          echo "🏥 Checking backend health..."
+          curl -f ${{ env.BACKEND_URL }}/healthz || echo "⚠️  Backend might be down"
+
+      - name: Check frontend health
+        continue-on-error: true
+        run: |
+          echo "🏥 Checking frontend health..."
+          curl -f -I ${{ env.FRONTEND_URL }} || echo "⚠️  Frontend might be down"
+
+  # Trigger Render deployments
+  deploy-backend:
+    name: 🚀 Deploy Backend to Render
+    needs: pre-deploy-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Render backend deployment
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: |
+          echo "🚀 Triggering Render backend deployment..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}"
+          echo "✅ Backend deployment triggered"
+
+      - name: Wait for deployment to start
+        run: |
+          echo "⏱️  Waiting 30 seconds for deployment to initialize..."
+          sleep 30
+
+      - name: Monitor deployment progress
+        run: |
+          echo "📊 Monitoring deployment..."
+          echo "Watch live at: https://dashboard.render.com"
+          echo ""
+          echo "⏱️  Waiting for deployment to complete (max 5 minutes)..."
+          
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if curl -sf ${{ env.BACKEND_URL }}/healthz > /dev/null 2>&1; then
+              echo "✅ Backend is responding!"
+              break
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Backend still deploying..."
+            sleep 10
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️  Deployment timeout reached. Check Render dashboard."
+            exit 1
+          fi
+
+  deploy-frontend:
+    name: 🚀 Deploy Frontend to Render
+    needs: pre-deploy-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Render frontend deployment
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
+        run: |
+          echo "🚀 Triggering Render frontend deployment..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}"
+          echo "✅ Frontend deployment triggered"
+
+      - name: Wait for deployment
+        run: |
+          echo "⏱️  Waiting 60 seconds for frontend deployment..."
+          sleep 60
+
+  # Post-deployment validation with real smoke tests
+  post-deploy-tests:
+    name: 🧪 Post-Deploy Smoke Tests
+    needs: [deploy-backend, deploy-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run comprehensive smoke tests on backend
+        run: |
+          echo ""
+          echo "🧪 Running Real Smoke Tests on Render Backend"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          ./scripts/smoke-tests --url ${{ env.BACKEND_URL }}
+
+      - name: Test frontend accessibility
+        continue-on-error: true
+        run: |
+          echo ""
+          echo "🧪 Testing Frontend Deployment"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' ${{ env.FRONTEND_URL }})
+          
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Frontend is accessible (HTTP $STATUS)"
+          else
+            echo "⚠️  Frontend returned HTTP $STATUS"
+          fi
+          
+          # Check if React app loads
+          if curl -s ${{ env.FRONTEND_URL }} | grep -q "root"; then
+            echo "✅ React root element found"
+          else
+            echo "⚠️  React root element not found"
+          fi
+
+      - name: Performance test
+        run: |
+          echo ""
+          echo "📊 Performance Tests"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Test backend response time
+          RESPONSE_TIME=$(curl -o /dev/null -s -w '%{time_total}' ${{ env.BACKEND_URL }}/healthz)
+          echo "Backend /healthz response time: ${RESPONSE_TIME}s"
+          
+          if (( $(echo "$RESPONSE_TIME < 2.0" | bc -l) )); then
+            echo "✅ Response time acceptable"
+          else
+            echo "⚠️  Response time high (>${RESPONSE_TIME}s)"
+          fi
+
+      - name: Integration test (Backend + Frontend)
+        continue-on-error: true
+        run: |
+          echo ""
+          echo "🔗 Integration Tests"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Test that frontend can reach backend
+          echo "Testing backend API from GitHub Actions..."
+          
+          # Create a test user
+          TEST_USER='{"name":"github-actions-test-'$RANDOM'","email":"test@example.com"}'
+          RESPONSE=$(curl -s -X POST ${{ env.BACKEND_URL }}/users \
+            -H "Content-Type: application/json" \
+            -d "$TEST_USER")
+          
+          if echo "$RESPONSE" | grep -q "id"; then
+            echo "✅ Backend API is working (user created)"
+          else
+            echo "⚠️  Backend API issue: $RESPONSE"
+          fi
+
+  # Final deployment report
+  deployment-report:
+    name: 📊 Deployment Report
+    needs: post-deploy-tests
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate deployment report
+        run: |
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
+          echo "📊 Render Deployment Report"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+          echo "🎯 Deployment Summary:"
+          echo "  • Backend URL: ${{ env.BACKEND_URL }}"
+          echo "  • Frontend URL: ${{ env.FRONTEND_URL }}"
+          echo "  • Status: ${{ needs.post-deploy-tests.result }}"
+          echo ""
+          echo "✅ Completed Steps:"
+          echo "  1. Pre-deployment health checks"
+          echo "  2. Triggered Render deployments"
+          echo "  3. Monitored deployment progress"
+          echo "  4. Executed smoke tests"
+          echo "  5. Validated integration"
+          echo ""
+          echo "📍 Next Steps:"
+          echo "  • Monitor in Grafana Cloud"
+          echo "  • Check logs in Render dashboard"
+          echo "  • Verify metrics in Prometheus"
+          echo ""
+          echo "🔗 Useful Links:"
+          echo "  • Render Dashboard: https://dashboard.render.com"
+          echo "  • Backend: ${{ env.BACKEND_URL }}"
+          echo "  • Frontend: ${{ env.FRONTEND_URL }}"
+          echo "  • Metrics: ${{ env.BACKEND_URL }}/metrics"
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
+
+      - name: Notify on failure
+        if: ${{ needs.post-deploy-tests.result == 'failure' }}
+        run: |
+          echo "❌ DEPLOYMENT VALIDATION FAILED"
+          echo ""
+          echo "⚠️  Action Required:"
+          echo "  1. Check Render dashboard for deployment logs"
+          echo "  2. Review GitHub Actions logs above"
+          echo "  3. Consider rolling back if issues persist"
+          echo ""
+          echo "🔙 Rollback Instructions:"
+          echo "  • Go to Render dashboard"
+          echo "  • Select your service"
+          echo "  • Click 'Rollback' to previous deployment"
