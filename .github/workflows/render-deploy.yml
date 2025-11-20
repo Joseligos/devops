@@ -39,7 +39,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Trigger Render backend deployment
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
         run: |
           echo "🚀 Triggering Render backend deployment..."
           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}"
@@ -85,7 +84,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Trigger Render frontend deployment
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
         run: |
           echo "🚀 Triggering Render frontend deployment..."
           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}"
