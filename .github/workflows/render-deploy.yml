@@ -108,7 +108,7 @@ jobs:
           echo ""
           echo "🧪 Running Real Smoke Tests on Render Backend"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ./scripts/smoke-tests --url ${{ env.BACKEND_URL }}
+          ./scripts/smoke-tests ${{ env.BACKEND_URL }}
 
       - name: Test frontend accessibility
         continue-on-error: true
