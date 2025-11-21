@@ -5,15 +5,10 @@
 set -e
 
 # Parse arguments
-URL="${1:-https://green.example.com}"
+TARGET_URL="${1:-https://devops-crud-app-backend.onrender.com}"
 
-echo "🧪 Running Smoke Tests"
-echo "   Target: $URL"
-echo ""
-
-# For simulation, we'll test against the actual backend
-REAL_BACKEND="https://devops-crud-app-backend.onrender.com"
-echo "   (Simulating with: $REAL_BACKEND)"
+echo "🧪 Running REAL Smoke Tests"
+echo "   Target: $TARGET_URL"
 echo ""
 
 FAILED=0
@@ -41,13 +36,13 @@ echo "════════════════════════�
 echo ""
 
 run_test "Health endpoint responds" \
-  "curl -sf -m 10 $REAL_BACKEND/healthz"
+  "curl -sf -m 10 $TARGET_URL/healthz"
 
 run_test "Health returns 200 status" \
-  "[ \$(curl -sf -o /dev/null -w '%{http_code}' $REAL_BACKEND/healthz) -eq 200 ]"
+  "[ \$(curl -sf -o /dev/null -w '%{http_code}' $TARGET_URL/healthz) -eq 200 ]"
 
 run_test "Response time < 2s" \
-  "[ \$(curl -sf -w '%{time_total}' -o /dev/null $REAL_BACKEND/healthz | cut -d. -f1) -lt 2 ]"
+  "[ \$(curl -sf -w '%{time_total}' -o /dev/null $TARGET_URL/healthz | cut -d. -f1) -lt 2 ]"
 
 echo ""
 echo "═══════════════════════════════════════════"
@@ -56,22 +51,22 @@ echo "════════════════════════�
 echo ""
 
 run_test "GET /users endpoint accessible" \
-  "curl -sf -m 10 $REAL_BACKEND/users -o /dev/null"
+  "curl -sf -m 10 $TARGET_URL/users -o /dev/null"
 
 run_test "GET /users returns valid JSON" \
-  "curl -sf -m 10 $REAL_BACKEND/users | head -c 100 | grep -q '{'"
+  "curl -sf -m 10 $TARGET_URL/users | head -c 100 | grep -q '{'"
 
 run_test "GET /users returns array" \
-  "curl -sf -m 10 $REAL_BACKEND/users | head -c 10 | grep -q '\['"
+  "curl -sf -m 10 $TARGET_URL/users | head -c 10 | grep -q '\['"
 
 # Test POST endpoint
 TEST_USER='{"name":"test-bluegreen-'$RANDOM'","email":"test@example.com"}'
 
 run_test "POST /users creates resource" \
-  "curl -sf -X POST $REAL_BACKEND/users -H 'Content-Type: application/json' -d '$TEST_USER'"
+  "curl -sf -X POST $TARGET_URL/users -H 'Content-Type: application/json' -d '$TEST_USER'"
 
 run_test "POST /users returns 200 or 201" \
-  "STATUS=\$(curl -sf -X POST -o /dev/null -w '%{http_code}' $REAL_BACKEND/users -H 'Content-Type: application/json' -d '$TEST_USER'); [ \$STATUS -eq 200 ] || [ \$STATUS -eq 201 ]"
+  "STATUS=\$(curl -sf -X POST -o /dev/null -w '%{http_code}' $TARGET_URL/users -H 'Content-Type: application/json' -d '$TEST_USER'); [ \$STATUS -eq 200 ] || [ \$STATUS -eq 201 ]"
 
 echo ""
 echo "═══════════════════════════════════════════"
@@ -80,10 +75,10 @@ echo "════════════════════════�
 echo ""
 
 run_test "HTTPS enabled (or HTTP in dev)" \
-  "curl -sf -m 5 $REAL_BACKEND/healthz"
+  "curl -sf -m 5 $TARGET_URL/healthz"
 
 run_test "CORS headers present" \
-  "curl -sf -I $REAL_BACKEND/healthz | grep -i 'access-control' > /dev/null 2>&1 || true"
+  "curl -sf -I $TARGET_URL/healthz | grep -i 'access-control' > /dev/null 2>&1 || true"
 
 echo ""
 echo "═══════════════════════════════════════════"
@@ -92,7 +87,7 @@ echo "════════════════════════�
 echo ""
 
 run_test "Can handle 10 concurrent requests" \
-  "for i in {1..10}; do curl -sf $REAL_BACKEND/healthz > /dev/null & done; wait"
+  "for i in {1..10}; do curl -sf $TARGET_URL/healthz > /dev/null & done; wait"
 
 # Measure average response time
 echo -n "[$((TOTAL + 1))] Average response time... "
@@ -100,7 +95,7 @@ TOTAL=$((TOTAL + 1))
 
 AVG_TIME=0
 for i in {1..5}; do
-  TIME=$(curl -sf -w '%{time_total}' -o /dev/null $REAL_BACKEND/healthz 2>/dev/null || echo "0")
+  TIME=$(curl -sf -w '%{time_total}' -o /dev/null $TARGET_URL/healthz 2>/dev/null || echo "0")
   AVG_TIME=$(echo "$AVG_TIME + $TIME" | bc)
 done
 AVG_TIME=$(echo "scale=3; $AVG_TIME / 5" | bc)

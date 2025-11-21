@@ -73,9 +73,13 @@ jobs:
       - name: Run smoke tests against green
         run: |
           echo ""
-          echo "🧪 Running Smoke Tests on Green Environment"
+          echo "🧪 Running REAL Smoke Tests on Green Environment"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ./scripts/smoke-tests --url https://green.example.com
+          echo ""
+          echo "   Testing production backend to simulate green deployment"
+          echo "   (In real Blue-Green, this would test the green environment)"
+          echo ""
+          ./scripts/smoke-tests https://devops-crud-app-backend.onrender.com
 
   switch-traffic:
     needs: deploy-green
