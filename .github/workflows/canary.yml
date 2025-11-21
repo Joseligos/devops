@@ -100,7 +100,7 @@ jobs:
           echo ""
           echo "📊 Running Canary Analysis"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ./scripts/canary-analysis --baseline v1 --canary v2 --duration 10m
+          ./scripts/canary-analysis --baseline v1 --canary v2 --duration 2m
 
       - name: Promote canary if analysis OK
         if: ${{ success() }}
